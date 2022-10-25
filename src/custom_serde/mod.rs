@@ -53,7 +53,6 @@ use sled::{
 use std::marker::PhantomData;
 
 pub mod serialize;
-use serialize::BincodeSerDe;
 
 #[cfg(feature = "convert")]
 pub mod convert;
@@ -288,7 +287,7 @@ impl<K, V, SerDe> Tree<K, V, SerDe> {
         F: FnMut(Option<Value<K, V, SerDe>>) -> Option<V>,
     {
         self.inner
-            .update_and_fetch(SerDe::SK::serialize(&key), |opt_value| {
+            .update_and_fetch(SerDe::SK::serialize(key), |opt_value| {
                 f(opt_value.map(|v| SerDe::DV::deserialize(sled::IVec::from(v)))).map(|value| {
                     // TODO: Maybe add Into<IVec> to SerDe::SV::Bytes
                     let bytes = SerDe::SV::serialize(&value);
@@ -464,45 +463,37 @@ impl<K, V, SerDe> Tree<K, V, SerDe> {
     {
         match (range.start_bound(), range.end_bound()) {
             (Bound::Unbounded, Bound::Unbounded) => {
-                return Iter::from_sled(self.inner.range::<&[u8], _>(..))
+                Iter::from_sled(self.inner.range::<&[u8], _>(..))
             }
             (Bound::Unbounded, Bound::Excluded(b)) => {
-                return Iter::from_sled(self.inner.range(..SerDe::SK::serialize(b)))
+                Iter::from_sled(self.inner.range(..SerDe::SK::serialize(b)))
             }
             (Bound::Unbounded, Bound::Included(b)) => {
-                return Iter::from_sled(self.inner.range(..=SerDe::SK::serialize(b)))
+                Iter::from_sled(self.inner.range(..=SerDe::SK::serialize(b)))
             }
             // FIX: This is not excluding lower bound.
             (Bound::Excluded(b), Bound::Unbounded) => {
-                return Iter::from_sled(self.inner.range(SerDe::SK::serialize(b)..))
+                Iter::from_sled(self.inner.range(SerDe::SK::serialize(b)..))
             }
-            (Bound::Excluded(b), Bound::Excluded(bb)) => {
-                return Iter::from_sled(
-                    self.inner
-                        .range(SerDe::SK::serialize(b)..SerDe::SK::serialize(bb)),
-                )
-            }
-            (Bound::Excluded(b), Bound::Included(bb)) => {
-                return Iter::from_sled(
-                    self.inner
-                        .range(SerDe::SK::serialize(b)..=SerDe::SK::serialize(bb)),
-                )
-            }
+            (Bound::Excluded(b), Bound::Excluded(bb)) => Iter::from_sled(
+                self.inner
+                    .range(SerDe::SK::serialize(b)..SerDe::SK::serialize(bb)),
+            ),
+            (Bound::Excluded(b), Bound::Included(bb)) => Iter::from_sled(
+                self.inner
+                    .range(SerDe::SK::serialize(b)..=SerDe::SK::serialize(bb)),
+            ),
             (Bound::Included(b), Bound::Unbounded) => {
-                return Iter::from_sled(self.inner.range(SerDe::SK::serialize(b)..))
+                Iter::from_sled(self.inner.range(SerDe::SK::serialize(b)..))
             }
-            (Bound::Included(b), Bound::Excluded(bb)) => {
-                return Iter::from_sled(
-                    self.inner
-                        .range(SerDe::SK::serialize(b)..SerDe::SK::serialize(bb)),
-                )
-            }
-            (Bound::Included(b), Bound::Included(bb)) => {
-                return Iter::from_sled(
-                    self.inner
-                        .range(SerDe::SK::serialize(b)..=SerDe::SK::serialize(bb)),
-                )
-            }
+            (Bound::Included(b), Bound::Excluded(bb)) => Iter::from_sled(
+                self.inner
+                    .range(SerDe::SK::serialize(b)..SerDe::SK::serialize(bb)),
+            ),
+            (Bound::Included(b), Bound::Included(bb)) => Iter::from_sled(
+                self.inner
+                    .range(SerDe::SK::serialize(b)..=SerDe::SK::serialize(bb)),
+            ),
         }
     }
 
@@ -865,6 +856,7 @@ impl<V> fmt::Display for CompareAndSwapError<V> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serialize::BincodeSerDe;
 
     #[test]
     fn test_range() {
