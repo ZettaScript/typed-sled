@@ -45,6 +45,7 @@ pub mod key_generating;
 pub mod search;
 
 pub mod custom_serde;
+pub mod transaction;
 
 use core::fmt;
 use core::iter::{DoubleEndedIterator, Iterator};
@@ -55,6 +56,8 @@ use sled::{
     IVec, Result,
 };
 use std::marker::PhantomData;
+
+use transaction::{Transactional, TransactionalTree};
 
 // pub trait Bin = DeserializeOwned + Serialize + Clone + Send + Sync;
 
@@ -181,15 +184,9 @@ impl<K, V> Tree<K, V> {
     /// Perform a multi-key serializable transaction.
     pub fn transaction<F, A, E>(&self, f: F) -> TransactionResult<A, E>
     where
-        F: Fn(&TransactionalTree<K, V>) -> ConflictableTransactionResult<A, E>,
+        F: Fn(TransactionalTree<K, V>) -> ConflictableTransactionResult<A, E>,
     {
-        self.inner.transaction(|sled_transactional_tree| {
-            f(&TransactionalTree {
-                inner: sled_transactional_tree,
-                _key: PhantomData,
-                _value: PhantomData,
-            })
-        })
+        Transactional::transaction(&self, f)
     }
 
     /// Create a new batched update that can be atomically applied.
@@ -578,69 +575,6 @@ impl<K, V> Tree<K, V> {
 }
 
 pub trait MergeOperator<K, V>: Fn(K, Option<V>, V) -> Option<V> {}
-
-pub struct TransactionalTree<'a, K, V> {
-    inner: &'a sled::transaction::TransactionalTree,
-    _key: PhantomData<fn() -> K>,
-    _value: PhantomData<fn() -> V>,
-}
-
-impl<'a, K, V> TransactionalTree<'a, K, V> {
-    pub fn insert(
-        &self,
-        key: &K,
-        value: &V,
-    ) -> std::result::Result<Option<V>, sled::transaction::UnabortableTransactionError>
-    where
-        K: KV,
-        V: KV,
-    {
-        self.inner
-            .insert(serialize(key), serialize(value))
-            .map(|opt| opt.map(|v| deserialize(&v)))
-    }
-
-    pub fn remove(
-        &self,
-        key: &K,
-    ) -> std::result::Result<Option<V>, sled::transaction::UnabortableTransactionError>
-    where
-        K: KV,
-        V: KV,
-    {
-        self.inner
-            .remove(serialize(key))
-            .map(|opt| opt.map(|v| deserialize(&v)))
-    }
-
-    pub fn get(
-        &self,
-        key: &K,
-    ) -> std::result::Result<Option<V>, sled::transaction::UnabortableTransactionError>
-    where
-        K: KV,
-        V: KV,
-    {
-        self.inner
-            .get(serialize(key))
-            .map(|opt| opt.map(|v| deserialize(&v)))
-    }
-
-    pub fn apply_batch(
-        &self,
-        batch: &Batch<K, V>,
-    ) -> std::result::Result<(), sled::transaction::UnabortableTransactionError> {
-        self.inner.apply_batch(&batch.inner)
-    }
-
-    pub fn flush(&self) {
-        self.inner.flush()
-    }
-
-    pub fn generate_id(&self) -> Result<u64> {
-        self.inner.generate_id()
-    }
-}
 
 pub struct Iter<K, V> {
     inner: sled::Iter,
